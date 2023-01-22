@@ -1,0 +1,29 @@
+{
+  "name": "webhook-authorizer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "jest --silent --coverage",
+    "prepare": "npm run build",
+    "prebuild": "rm -rf lib",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "author": {
+    "name": "AJ Schmidt",
+    "email": "aschmidt@nvidia.com"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.109",
+    "@types/jest": "^29.2.6",
+    "@types/node": "^18.11.18",
+    "jest": "^29.3.1",
+    "ts-jest": "^29.0.5",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "@octokit/auth-app": "^4.0.8",
+    "@octokit/rest": "^19.0.7"
+  }
+}
