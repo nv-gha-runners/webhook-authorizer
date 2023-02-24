@@ -75,6 +75,54 @@ describe("default", () => {
     });
   });
 
+  test("authorized installation created", async () => {
+    const result = await authorizer({
+      allowedOrgs: ["rapidsai"],
+      event: makeInstallationEvent({
+        action: "created",
+        orgName: "rapidsai",
+      }),
+    });
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      msg: "New installation from authorized organization.",
+      httpCode: 200,
+      isAuthorized: true,
+    });
+  });
+
+  test("authorized installation created (case insensitive 1)", async () => {
+    const result = await authorizer({
+      allowedOrgs: ["RAPIDSAI"],
+      event: makeInstallationEvent({
+        action: "created",
+        orgName: "rapidsai",
+      }),
+    });
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      msg: "New installation from authorized organization.",
+      httpCode: 200,
+      isAuthorized: true,
+    });
+  });
+
+  test("authorized installation created (case insensitive 2)", async () => {
+    const result = await authorizer({
+      allowedOrgs: ["rapidsai"],
+      event: makeInstallationEvent({
+        action: "created",
+        orgName: "RAPIDSAI",
+      }),
+    });
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({
+      msg: "New installation from authorized organization.",
+      httpCode: 200,
+      isAuthorized: true,
+    });
+  });
+
   test("installation deleted (no org object)", async () => {
     const result = await authorizer({
       allowedOrgs: ["rapidsai"],
@@ -91,7 +139,7 @@ describe("default", () => {
     });
   });
 
-  test("issue_comment created | delete success", async () => {
+  test("unauthorized org issue_comment | delete success", async () => {
     mockDeleteInstallation.mockReturnValueOnce("deleted successfully");
     const result = await authorizer({
       allowedOrgs: ["rapidsai"],
@@ -106,7 +154,7 @@ describe("default", () => {
     });
   });
 
-  test("issue_comment created | delete failed", async () => {
+  test("unauthorized org issue_comment | delete failed", async () => {
     mockDeleteInstallation.mockRejectedValueOnce("error deleting installation");
     const result = await authorizer({
       allowedOrgs: ["rapidsai"],
@@ -121,10 +169,40 @@ describe("default", () => {
     });
   });
 
-  test("issue_comment created | delete success", async () => {
+  test("authorized org issue_comment", async () => {
     mockDeleteInstallation.mockReturnValueOnce("deleted successfully");
     const result = await authorizer({
       allowedOrgs: ["rapidsai"],
+      event: makeIssueCommentEvent({
+        orgName: "rapidsai",
+      }),
+    });
+    expect(result).toStrictEqual({
+      msg: "Organization is authorized.",
+      httpCode: 200,
+      isAuthorized: true,
+    });
+  });
+
+  test("authorized org issue_comment (case insensitive 1)", async () => {
+    mockDeleteInstallation.mockReturnValueOnce("deleted successfully");
+    const result = await authorizer({
+      allowedOrgs: ["rapidsai"],
+      event: makeIssueCommentEvent({
+        orgName: "RAPIDSAI",
+      }),
+    });
+    expect(result).toStrictEqual({
+      msg: "Organization is authorized.",
+      httpCode: 200,
+      isAuthorized: true,
+    });
+  });
+
+  test("authorized org issue_comment (case insensitive 2)", async () => {
+    mockDeleteInstallation.mockReturnValueOnce("deleted successfully");
+    const result = await authorizer({
+      allowedOrgs: ["RAPIDSAI"],
       event: makeIssueCommentEvent({
         orgName: "rapidsai",
       }),

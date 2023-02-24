@@ -63,23 +63,31 @@ export const authorizer = async ({
   const lambdaEvent = { "@gh_event": ghEvent, ...payload };
   logger("start", lambdaEvent);
 
-  if (
-    ghEvent === "installation" &&
-    payload.action === "created" &&
-    !allowedOrgs.includes(payload.installation.account.login)
-  ) {
-    logger("unauthorized installation created", lambdaEvent);
-    try {
-      await deleteInstallation(payload);
-      return {
-        msg: "Application was automatically uninstalled from an unauthorized account.",
-        httpCode: 200,
-        isAuthorized: false,
-      };
-    } catch (error) {
-      console.error(error);
-      return UNINSTALL_FAILED_RESPONSE;
+  allowedOrgs = allowedOrgs.map((org) => org.toLowerCase());
+
+  if (ghEvent === "installation" && payload.action === "created") {
+    if (
+      !allowedOrgs.includes(payload.installation.account.login.toLowerCase())
+    ) {
+      logger("unauthorized installation created", lambdaEvent);
+      try {
+        await deleteInstallation(payload);
+        return {
+          msg: "Application was automatically uninstalled from an unauthorized account.",
+          httpCode: 200,
+          isAuthorized: false,
+        };
+      } catch (error) {
+        console.error(error);
+        return UNINSTALL_FAILED_RESPONSE;
+      }
     }
+    logger("authorized installation created", lambdaEvent);
+    return {
+      msg: "New installation from authorized organization.",
+      httpCode: 200,
+      isAuthorized: true,
+    };
   }
 
   const organizationObj = payload.organization;
@@ -96,7 +104,7 @@ export const authorizer = async ({
     };
   }
 
-  if (!allowedOrgs.includes(organizationObj.login)) {
+  if (!allowedOrgs.includes(organizationObj.login.toLowerCase())) {
     logger("unauthorized webhook received", lambdaEvent);
 
     try {
