@@ -41,6 +41,16 @@ const deleteInstallation = async (payload: any) => {
   });
 };
 
+/**
+ * Given a GitHub webhook and a list of authorized organization names (case
+ * insensitive), returns whether the provided webhook is authorized for further
+ * processing by a GitHub application. If the webhook originates from an
+ * organization that is not authorized to use the application it will be
+ * uninstalled from that organization.
+ * @param event API Gateway Event containing GitHub webhook
+ * @param allowedOrgs Array of authorized organizations
+ * @returns Object containing authorization information
+ */
 export const authorizer = async ({
   event,
   allowedOrgs,
