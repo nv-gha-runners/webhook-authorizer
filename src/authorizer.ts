@@ -24,7 +24,6 @@ const logger = (msg: string, obj: any = {}) => {
 const deleteInstallation = async (payload: any, getPrivateKeyOptions: GetPrivateKeyOptions) => {
   const installationId = payload.installation.id;
   const privateKey = getPrivateKey(getPrivateKeyOptions);
-  console.log(privateKey);
 
   if (!privateKey) {
     logger("no private key");
