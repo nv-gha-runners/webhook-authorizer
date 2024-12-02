@@ -34,7 +34,7 @@ const deleteInstallation = async (payload: any, getPrivateKeyOptions: GetPrivate
     authStrategy: createAppAuth,
     auth: {
       appId: payload.installation.app_id,
-      privateKey: Buffer.from(privateKey, "base64").toString(),
+      privateKey,
       installationId,
     },
   });
