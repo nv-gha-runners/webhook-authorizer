@@ -53,7 +53,7 @@ const deleteInstallation = async (payload: any, getPrivateKeyOptions: GetPrivate
  * uninstalled from that organization.
  * @param event API Gateway Event containing GitHub webhook
  * @param allowedOrgs Array of authorized organizations
- * @param privateKeyOptions Options to pass to getPrivateKey()
+ * @param getPrivateKeyOptions Options to pass to getPrivateKey()
  * @returns Object containing authorization information
  */
 export const authorizer = async ({
