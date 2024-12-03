@@ -1,6 +1,7 @@
 import { authorizer } from "../src";
 import { makeInstallationEvent } from "./webhooks/installation";
 import { makeIssueCommentEvent } from "./webhooks/issue_comment";
+import { getPrivateKey } from "@probot/get-private-key";
 
 const mockDeleteInstallation = jest.fn().mockName("deleteInstallation");
 jest.mock("@octokit/rest", () => ({
@@ -13,17 +14,16 @@ jest.mock("@octokit/rest", () => ({
   })),
 }));
 
-describe("default", () => {
-  const env = process.env;
+jest.mock("@probot/get-private-key", () => ({
+  getPrivateKey: jest.fn().mockName("getPrivateKey").mockReturnValue("1234"),
+}));
+const mockGetPrivateKey = <jest.Mock>(<unknown>getPrivateKey);
 
+describe("default", () => {
   beforeEach(() => {
     mockDeleteInstallation.mockClear();
+    mockGetPrivateKey.mockClear();
     jest.resetModules();
-    process.env = { ...env, PRIVATE_KEY: "1234" };
-  });
-
-  afterEach(() => {
-    process.env = env;
   });
 
   test("unauthorized installation created | delete success", async () => {
@@ -34,12 +34,18 @@ describe("default", () => {
         action: "created",
         orgName: "unauthorized_org",
       }),
+      getPrivateKeyOptions: {
+        env: {
+          PRIVATE_KEY: "abc",
+        },
+      },
     });
     expect(result).toStrictEqual({
       msg: "Application was automatically uninstalled from an unauthorized account.",
       httpCode: 200,
       isAuthorized: false,
     });
+    expect(mockGetPrivateKey).toHaveBeenCalledWith({ env: { PRIVATE_KEY: "abc" } });
   });
 
   test("unauthorized installation created | delete failed | octokit", async () => {
@@ -59,7 +65,7 @@ describe("default", () => {
   });
 
   test("unauthorized installation created | delete failed | missing PRIVATE_KEY", async () => {
-    delete process.env.PRIVATE_KEY;
+    mockGetPrivateKey.mockReturnValueOnce(null);
     const result = await authorizer({
       allowedOrgs: ["rapidsai"],
       event: makeInstallationEvent({
