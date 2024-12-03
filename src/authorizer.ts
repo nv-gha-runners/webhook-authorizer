@@ -1,15 +1,12 @@
 import { APIGatewayProxyEvent } from "aws-lambda";
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
-import { getPrivateKey } from "@probot/get-private-key";
 
 type Response = {
   isAuthorized: boolean;
   httpCode: number;
   msg: string;
 };
-
-type GetPrivateKeyOptions = Parameters<typeof getPrivateKey>[0];
 
 const UNINSTALL_FAILED_RESPONSE: Response = {
   httpCode: 500,
@@ -21,14 +18,8 @@ const logger = (msg: string, obj: any = {}) => {
   console.log(JSON.stringify({ "@msg": msg, ...obj }));
 };
 
-const deleteInstallation = async (payload: any, getPrivateKeyOptions: GetPrivateKeyOptions) => {
+const deleteInstallation = async (payload: any, privateKey: string) => {
   const installationId = payload.installation.id;
-  const privateKey = getPrivateKey(getPrivateKeyOptions);
-
-  if (!privateKey) {
-    logger("no private key");
-    throw new Error("No private key found in environment");
-  }
 
   const octokit = new Octokit({
     authStrategy: createAppAuth,
@@ -52,17 +43,17 @@ const deleteInstallation = async (payload: any, getPrivateKeyOptions: GetPrivate
  * uninstalled from that organization.
  * @param event API Gateway Event containing GitHub webhook
  * @param allowedOrgs Array of authorized organizations
- * @param getPrivateKeyOptions Options to pass to getPrivateKey()
+ * @param privateKey App private key for authentication
  * @returns Object containing authorization information
  */
 export const authorizer = async ({
   event,
   allowedOrgs,
-  getPrivateKeyOptions,
+  privateKey,
 }: {
   event: APIGatewayProxyEvent;
   allowedOrgs: string[];
-  getPrivateKeyOptions?: GetPrivateKeyOptions;
+  privateKey: string;
 }): Promise<Response> => {
   const payload = JSON.parse(event.body as string);
   const ghEvent = event.headers["X-GitHub-Event"] as string;
@@ -77,7 +68,7 @@ export const authorizer = async ({
     ) {
       logger("unauthorized installation created", lambdaEvent);
       try {
-        await deleteInstallation(payload, getPrivateKeyOptions);
+        await deleteInstallation(payload, privateKey);
         return {
           msg: "Application was automatically uninstalled from an unauthorized account.",
           httpCode: 200,
@@ -114,7 +105,7 @@ export const authorizer = async ({
     logger("unauthorized webhook received", lambdaEvent);
 
     try {
-      await deleteInstallation(payload, getPrivateKeyOptions);
+      await deleteInstallation(payload, privateKey);
       return {
         msg: "Organization is not authorized to use this application. Installation deleted.",
         httpCode: 200,
