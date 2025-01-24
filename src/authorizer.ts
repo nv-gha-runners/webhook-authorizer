@@ -1,4 +1,4 @@
-import { APIGatewayProxyEvent } from "aws-lambda";
+import { APIGatewayProxyEvent, LambdaFunctionURLEvent } from "aws-lambda";
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
 
@@ -51,7 +51,7 @@ export const authorizer = async ({
   allowedOrgs,
   privateKey,
 }: {
-  event: APIGatewayProxyEvent;
+  event: APIGatewayProxyEvent | LambdaFunctionURLEvent;
   allowedOrgs: string[];
   privateKey: string;
 }): Promise<Response> => {
