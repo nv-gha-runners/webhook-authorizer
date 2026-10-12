@@ -1,4 +1,5 @@
 import { APIGatewayProxyEvent } from "aws-lambda";
+import { Octokit } from "@octokit/rest";
 import { authorizer } from "../src";
 import {
   makeLambdaEvent,
@@ -8,11 +9,44 @@ import {
 import { makeInstallationEvent } from "./webhooks/installation";
 import { makeIssueCommentEvent } from "./webhooks/issue_comment";
 
+const mockGetInstallation = jest.fn().mockName("getInstallation");
+const mockDeleteInstallation = jest.fn().mockName("deleteInstallation");
+jest.mock("@octokit/rest", () => ({
+  Octokit: jest.fn().mockImplementation(() => ({
+    rest: {
+      apps: {
+        getInstallation: mockGetInstallation,
+        deleteInstallation: mockDeleteInstallation,
+      },
+    },
+  })),
+}));
+
+const APP_ID = 281868;
+const PRIVATE_KEY = "test-private-key";
+const AUTHORIZER_CREDENTIALS = {
+  appId: APP_ID,
+  privateKey: PRIVATE_KEY,
+  webhookSecret: WEBHOOK_SECRET,
+};
+
 const INVALID_SIGNATURE_RESPONSE = {
   msg: "Webhook signature is missing or invalid.",
   httpCode: 401,
   isAuthorized: false,
 };
+
+const UNINSTALL_FAILED_RESPONSE = {
+  msg: "Unauthorized organization detected. Automatic uninstall failed.",
+  httpCode: 500,
+  isAuthorized: false,
+};
+
+beforeEach(() => {
+  (Octokit as unknown as jest.Mock).mockClear();
+  mockGetInstallation.mockReset();
+  mockDeleteInstallation.mockReset();
+});
 
 const signatureCases: {
   name: string;
@@ -32,6 +66,19 @@ describe.each([
   { account: "rapidsai", allowed: true },
   { account: "unauthorized_org", allowed: false },
 ])("installation webhook from $account", ({ account, allowed }) => {
+  beforeEach(() => {
+    mockGetInstallation.mockResolvedValue({
+      data: {
+        id: 33174052,
+        account: {
+          id: 45887043,
+          login: account,
+        },
+      },
+    });
+    mockDeleteInstallation.mockResolvedValue("deleted successfully");
+  });
+
   test.each(signatureCases)("$name signature", async ({ options, valid }) => {
     const result = await authorizer({
       allowedOrgs: ["rapidsai"],
@@ -40,11 +87,13 @@ describe.each([
         orgName: account,
         signature: options,
       }),
-      webhookSecret: WEBHOOK_SECRET,
+      ...AUTHORIZER_CREDENTIALS,
     });
 
     if (!valid) {
       expect(result).toStrictEqual(INVALID_SIGNATURE_RESPONSE);
+      expect(mockGetInstallation).not.toHaveBeenCalled();
+      expect(mockDeleteInstallation).not.toHaveBeenCalled();
       return;
     }
 
@@ -56,11 +105,23 @@ describe.each([
             isAuthorized: true,
           }
         : {
-            msg: "Application was installed on an unauthorized account; manual removal is required.",
+            msg: "Application was automatically uninstalled from an unauthorized account.",
             httpCode: 200,
             isAuthorized: false,
           },
     );
+    expect(mockGetInstallation).toHaveBeenCalledTimes(allowed ? 0 : 1);
+    expect(mockDeleteInstallation).toHaveBeenCalledTimes(allowed ? 0 : 1);
+    if (!allowed) {
+      expect(Octokit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          auth: {
+            appId: APP_ID,
+            privateKey: PRIVATE_KEY,
+          },
+        }),
+      );
+    }
   });
 });
 
@@ -68,7 +129,7 @@ test("authorized organization issue_comment", async () => {
   const result = await authorizer({
     allowedOrgs: ["RAPIDSAI"],
     event: makeIssueCommentEvent({ orgName: "rapidsai" }),
-    webhookSecret: WEBHOOK_SECRET,
+    ...AUTHORIZER_CREDENTIALS,
   });
 
   expect(result).toStrictEqual({
@@ -78,17 +139,34 @@ test("authorized organization issue_comment", async () => {
   });
 });
 
-test("unauthorized organization issue_comment is rejected without uninstalling", async () => {
+test("unauthorized organization issue_comment is uninstalled after identity verification", async () => {
+  mockGetInstallation.mockResolvedValueOnce({
+    data: {
+      id: 33169462,
+      account: {
+        id: 104869010,
+        login: "unauthorized_org",
+      },
+    },
+  });
+  mockDeleteInstallation.mockResolvedValueOnce("deleted successfully");
+
   const result = await authorizer({
     allowedOrgs: ["rapidsai"],
     event: makeIssueCommentEvent({ orgName: "unauthorized_org" }),
-    webhookSecret: WEBHOOK_SECRET,
+    ...AUTHORIZER_CREDENTIALS,
   });
 
   expect(result).toStrictEqual({
-    msg: "Organization is not authorized to use this application.",
+    msg: "Organization is not authorized to use this application. Installation deleted.",
     httpCode: 200,
     isAuthorized: false,
+  });
+  expect(mockGetInstallation).toHaveBeenCalledWith({
+    installation_id: 33169462,
+  });
+  expect(mockDeleteInstallation).toHaveBeenCalledWith({
+    installation_id: 33169462,
   });
 });
 
@@ -106,9 +184,11 @@ test("invalid signature is rejected before parsing JSON", async () => {
     authorizer({
       allowedOrgs: ["rapidsai"],
       event,
-      webhookSecret: WEBHOOK_SECRET,
+      ...AUTHORIZER_CREDENTIALS,
     }),
   ).resolves.toStrictEqual(INVALID_SIGNATURE_RESPONSE);
+  expect(mockGetInstallation).not.toHaveBeenCalled();
+  expect(mockDeleteInstallation).not.toHaveBeenCalled();
 });
 
 test("base64-encoded bodies are verified against decoded bytes", async () => {
@@ -121,7 +201,7 @@ test("base64-encoded bodies are verified against decoded bytes", async () => {
   const result = await authorizer({
     allowedOrgs: ["rapidsai"],
     event,
-    webhookSecret: WEBHOOK_SECRET,
+    ...AUTHORIZER_CREDENTIALS,
   });
 
   expect(result.isAuthorized).toBe(true);
@@ -134,7 +214,7 @@ test("installation deleted without an organization is not forwarded", async () =
       action: "deleted",
       orgName: "unauthorized_org",
     }),
-    webhookSecret: WEBHOOK_SECRET,
+    ...AUTHORIZER_CREDENTIALS,
   });
 
   expect(result).toStrictEqual({
@@ -142,4 +222,95 @@ test("installation deleted without an organization is not forwarded", async () =
     httpCode: 200,
     isAuthorized: false,
   });
+});
+
+test.each([
+  {
+    name: "installation ID",
+    installationId: 1,
+    accountId: 45887043,
+    accountLogin: "unauthorized_org",
+  },
+  {
+    name: "account ID",
+    installationId: 33174052,
+    accountId: 1,
+    accountLogin: "unauthorized_org",
+  },
+  {
+    name: "account login",
+    installationId: 33174052,
+    accountId: 45887043,
+    accountLogin: "different-account",
+  },
+])("$name mismatch is not deleted", async ({
+  installationId,
+  accountId,
+  accountLogin,
+}) => {
+  mockGetInstallation.mockResolvedValueOnce({
+    data: {
+      id: installationId,
+      account: {
+        id: accountId,
+        login: accountLogin,
+      },
+    },
+  });
+
+  const result = await authorizer({
+    allowedOrgs: ["rapidsai"],
+    event: makeInstallationEvent({
+      action: "created",
+      orgName: "unauthorized_org",
+    }),
+    ...AUTHORIZER_CREDENTIALS,
+  });
+
+  expect(result).toStrictEqual(UNINSTALL_FAILED_RESPONSE);
+  expect(mockDeleteInstallation).not.toHaveBeenCalled();
+});
+
+test("installation lookup failure is returned without deleting", async () => {
+  mockGetInstallation.mockRejectedValueOnce(
+    new Error("installation lookup failed"),
+  );
+
+  const result = await authorizer({
+    allowedOrgs: ["rapidsai"],
+    event: makeInstallationEvent({
+      action: "created",
+      orgName: "unauthorized_org",
+    }),
+    ...AUTHORIZER_CREDENTIALS,
+  });
+
+  expect(result).toStrictEqual(UNINSTALL_FAILED_RESPONSE);
+  expect(mockDeleteInstallation).not.toHaveBeenCalled();
+});
+
+test("installation deletion failure is returned", async () => {
+  mockGetInstallation.mockResolvedValueOnce({
+    data: {
+      id: 33174052,
+      account: {
+        id: 45887043,
+        login: "unauthorized_org",
+      },
+    },
+  });
+  mockDeleteInstallation.mockRejectedValueOnce(
+    new Error("installation deletion failed"),
+  );
+
+  const result = await authorizer({
+    allowedOrgs: ["rapidsai"],
+    event: makeInstallationEvent({
+      action: "created",
+      orgName: "unauthorized_org",
+    }),
+    ...AUTHORIZER_CREDENTIALS,
+  });
+
+  expect(result).toStrictEqual(UNINSTALL_FAILED_RESPONSE);
 });

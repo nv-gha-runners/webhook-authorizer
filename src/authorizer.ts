@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { APIGatewayProxyEvent, LambdaFunctionURLEvent } from "aws-lambda";
+import { createAppAuth } from "@octokit/auth-app";
+import { Octokit } from "@octokit/rest";
 
 type Response = {
   isAuthorized: boolean;
@@ -11,6 +13,12 @@ const INVALID_SIGNATURE_RESPONSE: Response = {
   httpCode: 401,
   isAuthorized: false,
   msg: "Webhook signature is missing or invalid.",
+};
+
+const UNINSTALL_FAILED_RESPONSE: Response = {
+  httpCode: 500,
+  isAuthorized: false,
+  msg: "Unauthorized organization detected. Automatic uninstall failed.",
 };
 
 const logger = (msg: string, obj: Record<string, unknown> = {}) => {
@@ -57,25 +65,101 @@ const hasValidSignature = (
   );
 };
 
+type AccountIdentity = {
+  id: number;
+  login: string;
+};
+
+const deleteVerifiedInstallation = async ({
+  appId,
+  expectedAccount,
+  installationId,
+  privateKey,
+}: {
+  appId: number;
+  expectedAccount: AccountIdentity;
+  installationId: number;
+  privateKey: string;
+}) => {
+  const octokit = new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId,
+      privateKey,
+    },
+  });
+
+  const { data: installation } = await octokit.rest.apps.getInstallation({
+    installation_id: installationId,
+  });
+  const account = installation.account;
+
+  if (
+    installation.id !== installationId ||
+    !account ||
+    !("login" in account) ||
+    account.id !== expectedAccount.id ||
+    account.login.toLowerCase() !== expectedAccount.login.toLowerCase()
+  ) {
+    throw new Error(
+      "GitHub installation identity does not match the signed webhook payload.",
+    );
+  }
+
+  return octokit.rest.apps.deleteInstallation({
+    installation_id: installationId,
+  });
+};
+
+const uninstallUnauthorizedInstallation = async ({
+  appId,
+  expectedAccount,
+  installationId,
+  privateKey,
+}: {
+  appId: number;
+  expectedAccount: AccountIdentity;
+  installationId: number;
+  privateKey: string;
+}): Promise<Response | undefined> => {
+  try {
+    await deleteVerifiedInstallation({
+      appId,
+      expectedAccount,
+      installationId,
+      privateKey,
+    });
+  } catch (error) {
+    console.error(error);
+    return UNINSTALL_FAILED_RESPONSE;
+  }
+};
+
 /**
  * Given a GitHub webhook and a list of authorized organization names (case
  * insensitive), returns whether the provided webhook is authorized for further
  * processing by a GitHub application. The signature is verified against the
  * raw request body before the payload is parsed or used for authorization.
- * Unauthorized installations are logged for alerting and manual removal; this
- * function does not make destructive GitHub API calls.
+ * Unauthorized installations are verified against GitHub and automatically
+ * removed.
+ * @param appId Trusted GitHub App ID
  * @param event API Gateway Event containing GitHub webhook
  * @param allowedOrgs Array of authorized organizations
+ * @param privateKey App private key for authentication
  * @param webhookSecret GitHub App webhook secret
  * @returns Object containing authorization information
  */
 export const authorizer = async ({
+  appId,
   event,
   allowedOrgs,
+  privateKey,
   webhookSecret,
 }: {
+  appId: number;
   event: APIGatewayProxyEvent | LambdaFunctionURLEvent;
   allowedOrgs: string[];
+  privateKey: string;
   webhookSecret: string;
 }): Promise<Response> => {
   const body = getBody(event);
@@ -97,13 +181,18 @@ export const authorizer = async ({
     if (
       !allowedOrgs.includes(payload.installation.account.login.toLowerCase())
     ) {
-      logger("unauthorized installation created; manual removal required", {
-        "@gh_event": ghEvent,
+      logger("unauthorized installation created", lambdaEvent);
+      const failure = await uninstallUnauthorizedInstallation({
+        appId,
+        expectedAccount: payload.installation.account,
         installationId: payload.installation.id,
-        account: payload.installation.account.login,
+        privateKey,
       });
+      if (failure) {
+        return failure;
+      }
       return {
-        msg: "Application was installed on an unauthorized account; manual removal is required.",
+        msg: "Application was automatically uninstalled from an unauthorized account.",
         httpCode: 200,
         isAuthorized: false,
       };
@@ -131,13 +220,18 @@ export const authorizer = async ({
   }
 
   if (!allowedOrgs.includes(organizationObj.login.toLowerCase())) {
-    logger("unauthorized webhook received; manual review required", {
-      "@gh_event": ghEvent,
-      installationId: payload.installation?.id,
-      organization: organizationObj.login,
+    logger("unauthorized webhook received", lambdaEvent);
+    const failure = await uninstallUnauthorizedInstallation({
+      appId,
+      expectedAccount: organizationObj,
+      installationId: payload.installation.id,
+      privateKey,
     });
+    if (failure) {
+      return failure;
+    }
     return {
-      msg: "Organization is not authorized to use this application.",
+      msg: "Organization is not authorized to use this application. Installation deleted.",
       httpCode: 200,
       isAuthorized: false,
     };
