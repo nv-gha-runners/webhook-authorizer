@@ -1,12 +1,16 @@
-import { makeLambdaEvent } from "../../lambda_event";
+import {
+  makeLambdaEvent,
+  WebhookSignatureOptions,
+} from "../../lambda_event";
 
 type ArgType = {
   orgName: string;
+  signature?: WebhookSignatureOptions;
 };
 
 const GH_EVENT_NAME = "issue_comment";
 
-export const makeIssueCommentEvent = ({ orgName }: ArgType) => {
+export const makeIssueCommentEvent = ({ orgName, signature }: ArgType) => {
   return makeLambdaEvent(GH_EVENT_NAME, {
     action: "created",
     issue: {
@@ -307,5 +311,5 @@ export const makeIssueCommentEvent = ({ orgName }: ArgType) => {
       id: 33169462,
       node_id: "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uMzMxNjk0NjI=",
     },
-  });
+  }, signature);
 };

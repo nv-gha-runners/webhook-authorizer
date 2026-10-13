@@ -1,13 +1,21 @@
-import { makeLambdaEvent } from "../../lambda_event";
+import {
+  makeLambdaEvent,
+  WebhookSignatureOptions,
+} from "../../lambda_event";
 
 type ArgType = {
   action: "deleted" | "created";
   orgName: string;
+  signature?: WebhookSignatureOptions;
 };
 
 const GH_EVENT_NAME = "installation";
 
-export const makeInstallationEvent = ({ action, orgName }: ArgType) => {
+export const makeInstallationEvent = ({
+  action,
+  orgName,
+  signature,
+}: ArgType) => {
   return makeLambdaEvent(GH_EVENT_NAME, {
     action,
     installation: {
@@ -91,5 +99,5 @@ export const makeInstallationEvent = ({ action, orgName }: ArgType) => {
       type: "User",
       site_admin: false,
     },
-  });
+  }, signature);
 };
