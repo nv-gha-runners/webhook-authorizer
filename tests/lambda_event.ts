@@ -1,4 +1,4 @@
-import { APIGatewayProxyEvent } from "aws-lambda";
+import { LambdaFunctionURLEvent } from "aws-lambda";
 import { createHmac } from "node:crypto";
 
 export const WEBHOOK_SECRET = "test-webhook-secret";
@@ -20,13 +20,36 @@ export const makeLambdaEvent = (
       : signature;
 
   return {
+    version: "2.0",
+    routeKey: "$default",
+    rawPath: "/",
+    rawQueryString: "",
     headers: {
-      "X-GitHub-Event": event,
+      "content-type": "application/json",
+      "x-github-event": event,
       ...(webhookSignature === null
         ? {}
-        : { "X-Hub-Signature-256": webhookSignature }),
+        : { "x-hub-signature-256": webhookSignature }),
+    },
+    requestContext: {
+      accountId: "anonymous",
+      apiId: "example",
+      domainName: "example.lambda-url.us-east-2.on.aws",
+      domainPrefix: "example",
+      http: {
+        method: "POST",
+        path: "/",
+        protocol: "HTTP/1.1",
+        sourceIp: "192.0.2.1",
+        userAgent: "GitHub-Hookshot/example",
+      },
+      requestId: "example-request-id",
+      routeKey: "$default",
+      stage: "$default",
+      time: "16/Oct/2026:17:00:00 +0000",
+      timeEpoch: 1792170000000,
     },
     body,
     isBase64Encoded: false,
-  } as unknown as APIGatewayProxyEvent;
+  } as LambdaFunctionURLEvent;
 };

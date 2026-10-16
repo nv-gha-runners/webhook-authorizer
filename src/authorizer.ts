@@ -178,9 +178,12 @@ export const authorizer = async ({
   allowedOrgs = allowedOrgs.map((org) => org.toLowerCase());
 
   if (ghEvent === "installation" && payload.action === "created") {
-    if (
-      !allowedOrgs.includes(payload.installation.account.login.toLowerCase())
-    ) {
+    const account = payload.installation.account;
+    const isAuthorizedOrganization =
+      account.type === "Organization" &&
+      allowedOrgs.includes(account.login.toLowerCase());
+
+    if (!isAuthorizedOrganization) {
       logger("unauthorized installation created", lambdaEvent);
       const failure = await uninstallUnauthorizedInstallation({
         appId,

@@ -6,6 +6,7 @@ import {
 type ArgType = {
   action: "deleted" | "created";
   orgName: string;
+  accountType?: "Organization" | "User";
   signature?: WebhookSignatureOptions;
 };
 
@@ -14,6 +15,7 @@ const GH_EVENT_NAME = "installation";
 export const makeInstallationEvent = ({
   action,
   orgName,
+  accountType = "Organization",
   signature,
 }: ArgType) => {
   return makeLambdaEvent(GH_EVENT_NAME, {
@@ -41,7 +43,7 @@ export const makeInstallationEvent = ({
         events_url: "https://api.github.com/users/probottest/events{/privacy}",
         received_events_url:
           "https://api.github.com/users/probottest/received_events",
-        type: "User",
+        type: accountType,
         site_admin: false,
       },
       repository_selection: "all",
@@ -52,7 +54,7 @@ export const makeInstallationEvent = ({
       app_id: 281868,
       app_slug: "rapids-ops-test",
       target_id: 45887043,
-      target_type: "User",
+      target_type: accountType,
       permissions: {
         issues: "write",
         metadata: "read",
