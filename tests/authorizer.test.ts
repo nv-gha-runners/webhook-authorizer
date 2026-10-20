@@ -77,7 +77,7 @@ describe.each([
   },
   {
     name: "personal account with an allowlisted login",
-    account: "rapidsai",
+    account: "octocat",
     accountType: "User" as const,
     allowed: false,
   },
