@@ -63,9 +63,25 @@ const signatureCases: {
 ];
 
 describe.each([
-  { account: "rapidsai", allowed: true },
-  { account: "unauthorized_org", allowed: false },
-])("installation webhook from $account", ({ account, allowed }) => {
+  {
+    name: "allowed organization",
+    account: "rapidsai",
+    accountType: "Organization" as const,
+    allowed: true,
+  },
+  {
+    name: "disallowed organization",
+    account: "unauthorized_org",
+    accountType: "Organization" as const,
+    allowed: false,
+  },
+  {
+    name: "personal account with an allowlisted login",
+    account: "octocat",
+    accountType: "User" as const,
+    allowed: false,
+  },
+])("installation webhook from $name", ({ account, accountType, allowed }) => {
   beforeEach(() => {
     mockGetInstallation.mockResolvedValue({
       data: {
@@ -81,10 +97,11 @@ describe.each([
 
   test.each(signatureCases)("$name signature", async ({ options, valid }) => {
     const result = await authorizer({
-      allowedOrgs: ["rapidsai"],
+      allowedOrgs: ["rapidsai", "octocat"],
       event: makeInstallationEvent({
         action: "created",
         orgName: account,
+        accountType,
         signature: options,
       }),
       ...AUTHORIZER_CREDENTIALS,
@@ -123,6 +140,19 @@ describe.each([
       );
     }
   });
+});
+
+test("installation fixture uses the Lambda Function URL payload shape", () => {
+  const event = makeInstallationEvent({
+    action: "created",
+    orgName: "rapidsai",
+  });
+
+  expect(event.version).toBe("2.0");
+  expect(event.routeKey).toBe("$default");
+  expect(event.headers["x-github-event"]).toBe("installation");
+  expect(event.headers["x-hub-signature-256"]).toBeDefined();
+  expect(event.headers["X-GitHub-Event"]).toBeUndefined();
 });
 
 test("authorized organization issue_comment", async () => {
