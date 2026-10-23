@@ -97,7 +97,7 @@ describe.each([
 
   test.each(signatureCases)("$name signature", async ({ options, valid }) => {
     const result = await authorizer({
-      allowedOrgs: ["rapidsai"],
+      allowedOrgs: ["rapidsai", "octocat"],
       event: makeInstallationEvent({
         action: "created",
         orgName: account,
